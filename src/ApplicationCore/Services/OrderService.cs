@@ -3,6 +3,7 @@ using Microsoft.Azure.ServiceBus;
 using Microsoft.eShopWeb.ApplicationCore.Entities;
 using Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
+using Microsoft.eShopWeb.ApplicationCore.Entities.OrdersProcessing;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using Microsoft.eShopWeb.ApplicationCore.Specifications;
 using Microsoft.Extensions.Options;
@@ -12,6 +13,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using OrderItem = Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.OrderItem;
 
 namespace Microsoft.eShopWeb.ApplicationCore.Services
 {
@@ -23,13 +25,15 @@ namespace Microsoft.eShopWeb.ApplicationCore.Services
         private readonly IAsyncRepository<Basket> _basketRepository;
         private readonly IAsyncRepository<CatalogItem> _itemRepository;
         private readonly HttpClient _httpClient;
+        private readonly OrderItemsDeliveryServiceSettings _orderItemsDeliveryServiceSettings;
 
         public OrderService(IAsyncRepository<Basket> basketRepository,
             IAsyncRepository<CatalogItem> itemRepository,
             IAsyncRepository<Order> orderRepository,
             IUriComposer uriComposer,
             HttpClient httpClient,
-            IOptions<OrderItemsReserverSettings> orderItemsReserverSettings)
+            IOptions<OrderItemsDeliveryServiceSettings> orderItemsDeliveryServiceSettings,
+			IOptions<OrderItemsReserverSettings> orderItemsReserverSettings)
         {
             _orderRepository = orderRepository;
             _uriComposer = uriComposer;
@@ -37,6 +41,7 @@ namespace Microsoft.eShopWeb.ApplicationCore.Services
             _basketRepository = basketRepository;
             _itemRepository = itemRepository;
             _httpClient = httpClient;
+            _orderItemsDeliveryServiceSettings = orderItemsDeliveryServiceSettings.Value;
         }
 
         public async Task CreateOrderAsync(int basketId, Address shippingAddress)
@@ -62,7 +67,22 @@ namespace Microsoft.eShopWeb.ApplicationCore.Services
 
             await _orderRepository.AddAsync(order);
 
-            await SendRserverOrderMessageAsync(items);
+			await SendRserverOrderMessageAsync(items);
+
+            var orderDelivery = new OrderAggregate {
+                ShippingAddress = order.ShipToAddress,
+                OrderItems = order.OrderItems.Select(x => new OrderInfoItem 
+                {
+                    UnitPrice = x.UnitPrice,
+                    Units = x.Units
+                }).ToArray(),
+                FinalPrice = order.Total() 
+            };
+            string content = JsonConvert.SerializeObject(orderDelivery);
+            using (HttpContent jsonContent = new StringContent(content, Encoding.UTF8, "application/json"))
+            {
+                var result = await _httpClient.PostAsync(_orderItemsDeliveryServiceSettings.OrderItemsDeliveryServiceUrl, jsonContent);
+            }
         }
 
         private async Task SendRserverOrderMessageAsync(List<OrderItem> items)
