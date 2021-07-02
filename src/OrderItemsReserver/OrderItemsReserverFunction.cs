@@ -19,23 +19,30 @@ namespace OrderItemsReserver
             [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
             ILogger log)
         {
-            log.LogInformation("C# HTTP trigger function processed a request.");
-
-            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var data = JsonConvert.DeserializeObject<OrderDetail[]>(requestBody);
-            if (data.Length == 0)
+            try
             {
-                return new BadRequestObjectResult("No data in request body");
+                log.LogInformation("C# HTTP trigger function processed a request.");
+
+                string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                var data = JsonConvert.DeserializeObject<OrderDetail[]>(requestBody);
+                if (data.Length == 0)
+                {
+                    return new BadRequestObjectResult("No data in request body");
+                }
+                string responseMessage = JsonConvert.SerializeObject(data);
+
+                CloudStorageAccount storageAccount = CloudStorageAccount.Parse(Environment.GetEnvironmentVariable("StorageConnectionString"));
+                CloudBlobClient blobClient = storageAccount.CreateCloudBlobClient();
+                CloudBlobContainer container = blobClient.GetContainerReference(Environment.GetEnvironmentVariable("ContainerName"));
+                CloudBlockBlob blockBlob = container.GetBlockBlobReference($"{Guid.NewGuid()}.json");
+                await blockBlob.UploadTextAsync(responseMessage);
+
+                return new OkObjectResult(responseMessage);
             }
-            string responseMessage = JsonConvert.SerializeObject(data);
-
-            CloudStorageAccount storageAccount = CloudStorageAccount.Parse("DefaultEndpointsProtocol=https;AccountName=functionsstacc321;AccountKey=Yp0F31+aCbf/JV3jw/e4V8YUWcW8ptnB+PIahu7M3gKdaeYfACfkBCO8XqG5cEFAAMUO88Za5zfvHNtAkVaCOA==;EndpointSuffix=core.windows.net");
-            CloudBlobClient blobClient = storageAccount.CreateCloudBlobClient();
-            CloudBlobContainer container = blobClient.GetContainerReference("blobappdatacontainer789");
-            CloudBlockBlob blockBlob = container.GetBlockBlobReference($"{Guid.NewGuid()}.json");
-            await blockBlob.UploadTextAsync(responseMessage);
-
-            return new OkObjectResult(responseMessage);
+            catch (Exception ex)
+            {
+                return new OkObjectResult(ex.GetType() + " " + ex.Message);
+            }
         }
 
         internal class OrderDetail

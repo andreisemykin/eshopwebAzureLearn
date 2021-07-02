@@ -55,16 +55,16 @@ namespace Microsoft.eShopWeb.ApplicationCore.Services
                 var orderItem = new OrderItem(itemOrdered, basketItem.UnitPrice, basketItem.Quantity);
                 return orderItem;
             }).ToList();
+            
+            var order = new Order(basket.BuyerId, shippingAddress, items);
+
+            await _orderRepository.AddAsync(order);
 
             var orderDetails = items.Select(item => new { ItemId = item.Id, Quantity = item.Units }).ToArray();
             using (HttpContent jsonContent = new StringContent(JsonSerializer.Serialize(orderDetails), Encoding.UTF8, "application/json"))
             {
                 var result = await _httpClient.PostAsync(_orderItemsReserverSettings.OrderItemsReserverUrl, jsonContent);
-            }            
-
-            var order = new Order(basket.BuyerId, shippingAddress, items);
-
-            await _orderRepository.AddAsync(order);
+            }
         }
     }
 }
